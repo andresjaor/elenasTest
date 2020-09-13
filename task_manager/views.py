@@ -8,7 +8,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
-from task_manager.serializer import TaskSerializer, PaginatorTaskSerializer
+from task_manager.serializer import TaskSerializer, PaginatorTaskSerializer, UpdateTaskSerializer
 
 
 class AuthTokenResource(ObtainAuthToken):
@@ -32,7 +32,7 @@ class TaskResource(APIView):
     def get(self, request):
         page = self.request.query_params.get('page', 1)
         tasks_query = Task.objects.prefetch_related('user').only('id')\
-            .filter(user=request.user).order_by('-creation_date')
+            .filter(user=self.request.user).order_by('-creation_date')
         paginator = Paginator(tasks_query, settings.TASKS_PER_PAGE)
         setattr(paginator, 'current_page', page)
         pagination_serializer = self.pagination_serializer_class(paginator)
@@ -46,16 +46,35 @@ class TaskResource(APIView):
         return Response({'tasks': data_serializer.data, 'paginator': pagination_serializer.data})
 
     def post(self, request):
-        task = self.serializer_class(data=request.data)
+        task = self.serializer_class(data=self.request.data)
         task.is_valid(raise_exception=True)
         data = task.data
-        task = Task.objects.create(user=request.user, description=data['description'])
+        task = Task.objects.create(user=self.request.user, description=data['description'])
         serializer = self.serializer_class(task)
         return Response(serializer.data)
 
     def put(self, request):
-        pass
+        update_task = UpdateTaskSerializer(data=request.data)
+        update_task.is_valid(raise_exception=True)
+        data = update_task.data
+        try:
+            task = Task.objects.get(id=data['id'])
+            task.is_done = data['is_done']
+            task.save()
+        except Task.DoesNotExist:
+            return Response(f"task with id={data['id']} not found", status.HTTP_400_BAD_REQUEST)
+        serializer = self.serializer_class(task)
+        return Response(serializer.data)
 
     def delete(self, request):
-        pass
+        task_id = self.request.data.get('id')
+        if not task_id:
+            return Response(f"id param is mandatory", status.HTTP_400_BAD_REQUEST)
+        try:
+            task = Task.objects.get(id=task_id)
+            task.delete()
+        except Task.DoesNotExist:
+            return Response(f"task with id={task_id} not found", status.HTTP_400_BAD_REQUEST)
+        return Response({"task": task_id}, status.HTTP_200_OK)
+
 
