@@ -6,7 +6,7 @@ class TaskSerializer(serializers.Serializer):
     user_id = serializers.IntegerField(required=False)
     creation_date = serializers.DateTimeField(required=False)
     is_done = serializers.BooleanField(required=False)
-    description = serializers.CharField(required=True, allow_blank=False)
+    description = serializers.CharField(required=True, allow_blank=False, max_length=512)
 
 
 class PaginatorTaskSerializer(serializers.Serializer):
@@ -16,4 +16,5 @@ class PaginatorTaskSerializer(serializers.Serializer):
 
 class UpdateTaskSerializer(serializers.Serializer):
     id = serializers.IntegerField(required=True)
-    is_done = serializers.BooleanField(required=True)
+    is_done = serializers.BooleanField(required=False)
+    description = serializers.CharField(required=False, allow_blank=False, max_length=512)

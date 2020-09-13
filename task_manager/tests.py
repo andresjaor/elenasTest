@@ -21,10 +21,11 @@ class ApiAuthTest(TestCase):
 
 class ApiTaskTest(TestCase):
     @staticmethod
-    def create_initial_data(num_tasks=100):
+    def create_initial_data(num_tasks=100, username=1):
         # create initial_data
-        if not User.objects.filter(username="username1").exists():
-            user = User.objects.create_user("username1", "username1@admin.com", "Pass_username1")
+        if not User.objects.filter(username=f"username{username}").exists():
+            user = User.objects.create_user(f"username{username}",
+                                            f"username{username}@admin.com", f"Pass_username{username}")
             tasks = []
             for n in range(num_tasks):
                 task = Task.objects.create(user=user, description=f"test message {n}")
@@ -32,9 +33,10 @@ class ApiTaskTest(TestCase):
             return user, tasks
 
     @staticmethod
-    def generate_auth_token():
+    def generate_auth_token(username=1):
         client = APIClient()
-        response = client.post(reverse('auth_token'), {'username': "username1", 'password': "Pass_username1"})
+        response = client.post(reverse('auth_token'), {'username': f"username{username}",
+                                                       'password': f"Pass_username{username}"})
         return response.data['token']
 
     def test_task_pagination(self):
@@ -63,24 +65,36 @@ class ApiTaskTest(TestCase):
         client = APIClient()
         response = client.put(reverse('task_resource'), data={}, HTTP_AUTHORIZATION=f'Token {token}')
         self.assertEqual(response.status_code, 400)
-        response = client.put(reverse('task_resource'), data={"id": 1, "is_done": True},
+        response = client.put(reverse('task_resource'), data={"id": 1, "is_done": True, "description": "New"},
                               HTTP_AUTHORIZATION=f'Token {token}')
         self.assertEqual(response.status_code, 200)
         db_task = Task.objects.get(id=1)
         self.assertEqual(db_task.is_done, True)
-        response = client.put(reverse('task_resource'), data={"id": 1, "is_done": False},
+        response = client.put(reverse('task_resource'), data={"id": 1, "is_done": False, "description": "New"},
                               HTTP_AUTHORIZATION=f'Token {token}')
         self.assertEqual(response.status_code, 200)
         db_task = Task.objects.get(id=1)
         self.assertEqual(db_task.is_done, False)
+        self.assertEqual(db_task.description, "New")
+        # testing private tasks
+        self.create_initial_data(1, 2)
+        token = self.generate_auth_token(2)
+        response = client.put(reverse('task_resource'), data={"id": 1, "is_done": False},
+                              HTTP_AUTHORIZATION=f'Token {token}')
+        self.assertEqual(response.status_code, 403)
 
-    def delete_update_task(self):
+    def test_delete_task(self):
         self.create_initial_data(1)
-        token = self.generate_auth_token()
+        token_1 = self.generate_auth_token()
         client = APIClient()
-        response = client.delete(reverse('task_resource'), data={}, HTTP_AUTHORIZATION=f'Token {token}')
+        response = client.delete(reverse('task_resource'), data={}, HTTP_AUTHORIZATION=f'Token {token_1}')
         self.assertEqual(response.status_code, 400)
         response = client.delete(reverse('task_resource'), data={"id": 1},
-                                 HTTP_AUTHORIZATION=f'Token {token}')
+                                 HTTP_AUTHORIZATION=f'Token {token_1}')
         self.assertEqual(response.status_code, 200)
-        self.assertRaises(Task.DoesNotExist, Task.objects.get(id=1))
+        self.assertEqual(Task.objects.filter(id=1).first(), None)
+        # testing private tasks
+        self.create_initial_data(1, 2)
+        response = client.delete(reverse('task_resource'), data={"id": 2},
+                                 HTTP_AUTHORIZATION=f'Token {token_1}')
+        self.assertEqual(response.status_code, 403)

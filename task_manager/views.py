@@ -31,8 +31,12 @@ class TaskResource(APIView):
 
     def get(self, request):
         page = self.request.query_params.get('page', 1)
+        description = self.request.query_params.get('description')
+        filters = {'user': self.request.user}
+        if description:
+            filters.update({'description__icontains': description})
         tasks_query = Task.objects.prefetch_related('user').only('id')\
-            .filter(user=self.request.user).order_by('-creation_date')
+            .filter(**filters).order_by('-creation_date').all()
         paginator = Paginator(tasks_query, settings.TASKS_PER_PAGE)
         setattr(paginator, 'current_page', page)
         pagination_serializer = self.pagination_serializer_class(paginator)
@@ -59,7 +63,10 @@ class TaskResource(APIView):
         data = update_task.data
         try:
             task = Task.objects.get(id=data['id'])
-            task.is_done = data['is_done']
+            if task.user.id != request.user.id:
+                return Response("you don't own this task", status.HTTP_403_FORBIDDEN)
+            task.is_done = data.get('is_done', task.is_done)
+            task.description = data.get('description', task.description)
             task.save()
         except Task.DoesNotExist:
             return Response(f"task with id={data['id']} not found", status.HTTP_400_BAD_REQUEST)
@@ -72,6 +79,8 @@ class TaskResource(APIView):
             return Response(f"id param is mandatory", status.HTTP_400_BAD_REQUEST)
         try:
             task = Task.objects.get(id=task_id)
+            if task.user.id != request.user.id:
+                return Response("you don't own this task", status.HTTP_403_FORBIDDEN)
             task.delete()
         except Task.DoesNotExist:
             return Response(f"task with id={task_id} not found", status.HTTP_400_BAD_REQUEST)
